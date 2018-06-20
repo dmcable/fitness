@@ -11,7 +11,10 @@ def load_consequences(transcripts, allele_properties, gene_list):
         transcript_properties = transcript.split('|')
         allele, consequences_str, _, gene = transcript_properties[0:4]
         # exclude indels and if this variant is not found
-        if(gene in gene_list and len(allele) == len(allele_properties['REF'][0]) and allele in allele_properties['ALT']):
+        cond1 = gene in gene_list
+        cond2 = len(allele) == len(allele_properties['REF'][0])
+        cond3 = allele in allele_properties['ALT']
+        if(cond1 and cond2 and cond3):
             consequences_set = set(consequences_str.split('&'))
             allele_index = allele_properties['ALT'].index(allele)
             consequence_dict = allele_properties['consequence'][allele_index]
@@ -37,7 +40,8 @@ def get_allele_properties(line, gene_list):
         elif(entry[0] == 'CSQ'):
             transcripts = entry[1].split(',')
             load_consequences(transcripts, allele_properties, gene_list)
-    filter = [len(allele_properties['consequence'][allele_index]) > 0 for allele_index in range(num_alleles)]
+    consequences = allele_properties['consequence']
+    filter = [len(consequences[allele_index]) > 0 for allele_index in range(num_alleles)]
     return allele_properties, filter
 
 
