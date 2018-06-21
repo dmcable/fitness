@@ -3,7 +3,7 @@ import pdb
 import pandas as pd
 from itertools import compress
 import numpy as np
-from FitnessEstimatorNewer import FitnessEstimator
+from FitnessEstimator import FitnessEstimator
 
 
 def load_consequences(transcripts, allele_properties, gene_list):
@@ -30,6 +30,7 @@ def get_allele_properties(line, gene_list):
     num_alleles = len(allele_properties['ALT'])
     allele_properties['POS'] = [int(allele_data[1]) for allele_index in range(num_alleles)]
     allele_properties['REF'] = [allele_data[3] for allele_index in range(num_alleles)]
+    allele_properties['FILTER'] = [allele_data[6] for allele_index in range(num_alleles)]
     allele_info = allele_data[7].split(';')
     allele_properties['consequence'] = [{} for allele_index in range(num_alleles)]
     for i in range(len(allele_info)):
@@ -74,7 +75,8 @@ def create_gene_df(allele_df, mutation_rates, mutation_type):
             cond1 = gene != ''
             cond2 = len(mutation_consequences.intersection(gene_consequences[gene])) > 0
             cond3 = gene in gene_df.index
-            if(cond1 and cond2 and cond3):
+            cond4 = allele_row['FILTER'] == 'PASS'
+            if(cond1 and cond2 and cond3 and cond4):
                 gene_df.loc[gene, 'allele_count'] += allele_row['AC']
     return gene_df
 
@@ -83,7 +85,7 @@ def load_allele_df(vcf_dataset_path, gene_list):
     MAX_ALLELE_COUNT = 6000000000
     n_lines = 0
     passed_header = False
-    col_names = ['POS', 'REF', 'ALT', 'AC', 'consequence']
+    col_names = ['POS', 'REF', 'ALT', 'AC', 'FILTER', 'consequence']
     allele_df_lists = {}
     for name in col_names:
         allele_df_lists[name] = []
@@ -109,8 +111,6 @@ def load_gene_distribution(save_data, data_file_names):
     mutation_rates = pd.read_excel('mutation_probabilities.xls', index_col=1, sheet_name=1)
     vcf_dataset_path = 'ExAC.vcf.gz'
     allele_df = load_allele_df(vcf_dataset_path, mutation_rates.index)
-    allele_df.to_pickle(data_file_names['allele'])
-    pdb.set_trace()
     gene_df_missense = create_gene_df(allele_df, mutation_rates, 'mis')
     gene_df_ptv = create_gene_df(allele_df, mutation_rates, 'ptv')
     if(save_data):
@@ -127,10 +127,10 @@ def load_gene_distribution_saved(data_file_names):
 
 
 if __name__ == '__main__':
-    cached_data = True
+    cached_data = False
     data_file_names = {
-        'allele': 'saved_data/allele_df.pkl', 'missense': 'saved_data/gene_df_missnese.pkl',
-        'ptv': 'saved_data/gene_df_ptv.pkl'
+        'allele': 'saved_data/allele_df2.pkl', 'missense': 'saved_data/gene_df_missnese2.pkl',
+        'ptv': 'saved_data/gene_df_ptv2.pkl'
     }
     if(not cached_data):
         save_data = True
@@ -141,5 +141,6 @@ if __name__ == '__main__':
         gene_df_missense, gene_df_ptv = load_gene_distribution_saved(data_file_names)
     N_genomes = 60706
     estimator_ptv = FitnessEstimator(N_genomes, gene_df_ptv)
+    estimator_ptv.calculate_posterior_mean(gene_df_ptv)
 
     pdb.set_trace()

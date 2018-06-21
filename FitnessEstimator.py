@@ -38,9 +38,8 @@ class FitnessEstimator(object):
         return log_likelihood
 
     @staticmethod
-    def compute_posterior(alpha, beta, allele_count, total_mutations):
+    def compute_posterior(alpha, beta, allele_count, total_mutations, delta=0.0005):
         p_n = FitnessEstimator.log_likelihood_analytical(alpha, beta, allele_count, total_mutations)
-        delta = 0.0005
         N = 5000
         total_prob = 0
         posterior_pdf = np.zeros(N)
@@ -61,11 +60,23 @@ class FitnessEstimator(object):
         '''
         return posterior_pdf
 
+    @staticmethod
+    def compute_mean(alpha, beta, allele_count, total_mutations, delta=0.0005):
+        posterior_pdf = FitnessEstimator.compute_posterior(
+            alpha, beta, allele_count, total_mutations, delta
+        )
+        total = 0
+        for i in range(len(posterior_pdf)):
+            s = delta * (i + 1)
+            total += posterior_pdf[i] * delta * s
+        return total
+
     # gene_df: a dataframe with columns of allele_count and mutation_rate
     def __init__(self, N_genomes, gene_df):
         self.N_genomes = N_genomes
         # self._alpha, self._beta = self.estimate_prior(gene_df)
-        FitnessEstimator.plot_prior_and_posterior(0.05, 0.008, gene_df)
+        self._alpha, self._beta = 0.05, 0.008
+        #FitnessEstimator.plot_prior_and_posterior(0.05, 0.008, gene_df)
 
     @staticmethod
     def plot_prior_and_posterior(alpha, beta, gene_df):
@@ -135,3 +146,20 @@ class FitnessEstimator(object):
                     )
                 )
         return log_likelihood
+
+    def calculate_posterior_mean(self, gene_df):
+        gene_df['s_mean'] = -1
+        gene_count = 0
+        for index, gene in gene_df.iterrows():
+            allele_count = gene['allele_count']
+            if(allele_count < 60):
+                total_mutations = self.N_genomes * gene['mut_rate']
+                gene_df.loc[index, 's_mean'] = FitnessEstimator.compute_mean(
+                    self._alpha, self._beta, allele_count, total_mutations
+                )
+            gene_count += 1
+            if(gene_count % 100 == 0):
+                print(gene_count)
+            if(gene_count > 1000):
+                break
+        pdb.set_trace()
