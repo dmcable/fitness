@@ -4,6 +4,11 @@ import pandas as pd
 from itertools import compress
 import numpy as np
 from FitnessEstimator import FitnessEstimator
+from genePredExt import parse_genePredExt
+import coverage
+
+
+N_genomes = 60706
 
 
 def load_consequences(transcripts, allele_properties, gene_list):
@@ -60,14 +65,15 @@ def create_gene_df(allele_df, mutation_rates, mutation_type):
     assert(mutation_type in ['mis', 'ptv'])
     if(mutation_type == 'mis'):
         mutation_consequences = set(['missense_variant'])
-        gene_df['mut_rate'] = mutation_rates.apply(lambda gene: 10**gene.mis, axis=1)
+
+        def rate_function(gene): return 10**gene.mis
     else:
         mutation_consequences = set(
             ['stop_gained', 'splice_acceptor_variant', 'splice_donor_variant']
         )
-        gene_df['mut_rate'] = mutation_rates.apply(
-            lambda gene: combine_log_rates(gene.non, gene.splice_site), axis=1
-        )
+
+        def rate_function(gene): return combine_log_rates(gene.non, gene.splice_site)
+    gene_df['total_mutations'] = N_genomes * mutation_rates.apply(rate_function, axis=1)
     gene_df['allele_count'] = 0
     for index, allele_row in allele_df.iterrows():
         gene_consequences = allele_row['consequence']
@@ -108,8 +114,9 @@ def load_allele_df(vcf_dataset_path, gene_list):
 
 
 def load_gene_distribution(save_data, data_file_names):
-    mutation_rates = pd.read_excel('mutation_probabilities.xls', index_col=1, sheet_name=1)
-    vcf_dataset_path = 'ExAC.vcf.gz'
+    vcf_dataset_path = 'input_data/ExAC.vcf.gz'
+    mut_rates_path = 'input_data/mutation_probabilities.xls'
+    mutation_rates = pd.read_excel(mut_rates_path, index_col=1, sheet_name=1)
     allele_df = load_allele_df(vcf_dataset_path, mutation_rates.index)
     gene_df_missense = create_gene_df(allele_df, mutation_rates, 'mis')
     gene_df_ptv = create_gene_df(allele_df, mutation_rates, 'ptv')
@@ -126,12 +133,58 @@ def load_gene_distribution_saved(data_file_names):
     return gene_df_missense, gene_df_ptv
 
 
+def get_coverage_filter(gene_index):
+    gene_filter = pd.Series(index=gene_index)
+    gene_filter.loc[:] = False  # default is to drop the gene
+    line_count = 0
+    gene_coordinate_file = 'input_data/canonical_gencode_gene_structure.txt'
+    coverage_file = 'input_data/coverage'
+    with open(gene_coordinate_file, 'r') as coordinate_reader:
+        for curr_line in coordinate_reader:
+            if(line_count % 100 == 0):
+                print(line_count)
+            line_count += 1
+            gene_coordinates = parse_genePredExt(curr_line)
+            cov_dict = coverage.open_coverage(coverage_file)
+            chrom = getattr(gene_coordinates, 'chrom')
+            exons = getattr(gene_coordinates, 'exons')
+            gene = getattr(gene_coordinates, 'name2')
+            successes = 0
+            failures = 0
+            if(gene in gene_filter):
+                for i in range(len(exons)):
+                        successes_to_add, failures_to_add = coverage.good_coverage(
+                            cov_dict[chrom], chrom, exons[i][0], exons[i][1]
+                        )
+                        successes += successes_to_add
+                        failures += failures_to_add
+                gene_filter[gene] = successes >= failures
+    return gene_filter
+
+
+def filter_gene_df(gene_df, file_name):
+    gene_filter = gene_df['allele_count'] <= 0.001 * N_genomes
+    gene_df = gene_df[gene_filter]
+    gene_filter = get_coverage_filter(gene_df.index)
+    gene_df = gene_df[gene_filter]
+    gene_df.to_pickle(file_name)
+    return gene_df
+
+
 if __name__ == '__main__':
-    cached_data = False
+    cached_data = True
+    filtered = False
     data_file_names = {
-        'allele': 'saved_data/allele_df2.pkl', 'missense': 'saved_data/gene_df_missnese2.pkl',
-        'ptv': 'saved_data/gene_df_ptv2.pkl'
+        'allele': 'saved_data/allele_df.pkl', 'missense': 'saved_data/gene_df_missense.pkl',
+        'ptv': 'saved_data/gene_df_ptv.pkl'
     }
+    filtered_file_names = {
+        'missense': 'saved_data/gene_df_filtered_missense.pkl',
+        'ptv': 'saved_data/gene_df_filtered_ptv.pkl'
+    }
+    if(filtered):
+        for key, value in filtered_file_names.iteritems():
+            data_file_names[key] = value
     if(not cached_data):
         save_data = True
         allele_df, gene_df_missense, gene_df_ptv = load_gene_distribution(
@@ -139,8 +192,10 @@ if __name__ == '__main__':
         )
     else:
         gene_df_missense, gene_df_ptv = load_gene_distribution_saved(data_file_names)
-    N_genomes = 60706
-    estimator_ptv = FitnessEstimator(N_genomes, gene_df_ptv)
+    if(not filtered):
+        gene_df_ptv = filter_gene_df(gene_df_ptv, filtered_file_names['ptv'])
+        gene_df_missense = filter_gene_df(gene_df_missense, filtered_file_names['missense'])
+    estimator_ptv = FitnessEstimator(gene_df_ptv)
     estimator_ptv.calculate_posterior_mean(gene_df_ptv)
 
     pdb.set_trace()
