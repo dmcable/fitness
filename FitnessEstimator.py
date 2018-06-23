@@ -172,23 +172,6 @@ class FitnessEstimator(object):
         posterior_cdf = np.cumsum(posterior_pdf) * self._delta
         return posterior_cdf, posterior_pdf
 
-    def plot_posterior_noise(self, gene_df):
-        N_samples = [10, 30, 100, 300, 1000]
-        N_trials = [300, 100, 30, 10, 5]
-        means = [0 for _ in range(len(N_samples))]
-        stds = [0 for _ in range(len(N_samples))]
-        for i in range(len(N_samples)):
-            results = np.zeros(N_trials[i])
-            for j in range(N_trials[i]):
-                print(j)
-                posterior_cdf, posterior_pdf = self.get_aggregate_posterior_cdf(
-                    gene_df, num_genes=N_samples[i]
-                )
-                results[j] = posterior_cdf[80]
-            means[i] = np.mean(results)
-            stds[i] = np.std(results)
-        pdb.set_trace()
-
     def fit_inverse_gaussian(self, pdf):
         first_moment = 0
         second_moment = 0
