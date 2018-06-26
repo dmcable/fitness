@@ -40,15 +40,19 @@ class FitnessEstimator(object):
     def __init__(self, gene_df):
         self._N_steps = 5000
         self._delta = 0.0005
-        self._alpha, self._beta = self.estimate_prior(gene_df, method='iterative', grid_size=10)
+        self._alpha, self._beta = self.estimate_prior(gene_df, method='empirical', grid_size=20)
         #self._alpha, self._beta = 0.024, 0.0028
-        self._alpha, self._beta = 0.016, 0.0038
+        #self._alpha, self._beta = .037, 0.0014
+        #self.plot_prior_and_posterior(gene_df)
+        #print(self.prior_posterior_distance(gene_df))
+        #self._alpha, self._beta = 2.0, 0.0014
+        #print(self.prior_posterior_distance(gene_df))
         self.plot_prior_and_posterior(gene_df)
 
     def estimate_prior(self, gene_df, method='empirical', grid_size=10):
         assert(method in ['empirical', 'iterative'])
-        N_alpha = grid_size
-        N_beta = grid_size
+        N_alpha = grid_size # grid_size
+        N_beta = grid_size # grid_size
         alpha_vals = np.exp(np.linspace(np.log(.001), np.log(2), N_alpha))
         beta_vals = np.exp(np.linspace(np.log(.0001), np.log(2), N_beta))
         results = np.zeros((N_alpha, N_beta))
@@ -68,13 +72,17 @@ class FitnessEstimator(object):
                     results[alpha_index, beta_index] = (
                         self.prior_posterior_distance(gene_df)
                     )
-        np.save('Results/prior_results' + str(N_alpha) + '_' + method + '.npy', results)
+        np.save('results/prior_results' + str(N_alpha) + '_' + method + '.npy', results)
         alpha_array, beta_array = np.meshgrid(alpha_vals, beta_vals, indexing='ij')
         plot_figure = True
         if(plot_figure):
             plotting.plot_prior_landscape(alpha_array, beta_array, results)
-        max_index = np.ndarray.argmax(results)
-        (ml_alpha_index, ml_beta_index) = np.unravel_index(max_index, results.shape)
+        if(method == 'empirical'):
+            best_index = np.ndarray.argmax(results)
+        else:
+            best_index = np.ndarray.argmin(results)
+        (ml_alpha_index, ml_beta_index) = np.unravel_index(best_index, results.shape)
+        pdb.set_trace()
         return alpha_vals[ml_alpha_index], beta_vals[ml_beta_index]
 
     def compute_log_likelihood(self, gene_df, alpha, beta):
@@ -207,5 +215,12 @@ class FitnessEstimator(object):
     def prior_posterior_distance(self, gene_df):
         s_vals = np.array([i * self._delta for i in range(self._N_steps)])
         prior_cdf = [inv_gauss_cdf(self._alpha, self._beta, s) for s in s_vals]
-        posterior_cdf, _ = self.get_aggregate_posterior_cdf(gene_df, num_genes=300)
-        return np.sum(self._delta * np.abs(prior_cdf - posterior_cdf))
+        posterior_cdf, _ = self.get_aggregate_posterior_cdf(gene_df, num_genes=1000)
+        # np.sum(self._delta * np.abs(prior_cdf - posterior_cdf))
+        indices_outside_support = np.where(np.array(prior_cdf) > 0.999)[0]
+        if(len(indices_outside_support) > 0):
+            support_length = min(np.where(np.array(prior_cdf) > 0.999)[0][0] * self._delta, 1.0)
+        else:
+            support_length = 1.0
+        pdb.set_trace()
+        return np.log(self._delta * np.sum(np.square(prior_cdf - posterior_cdf))) / support_length
