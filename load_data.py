@@ -5,6 +5,7 @@ from itertools import compress
 import numpy as np
 from genePredExt import parse_genePredExt
 import coverage
+import variant_quartiles
 
 N_genomes = 60706
 
@@ -60,11 +61,15 @@ def combine_log_rates(rate1, rate2):
 
 def create_gene_df(allele_df, mutation_rates, mutation_type):
     gene_df = pd.DataFrame(index=mutation_rates.index)
-    assert(mutation_type in ['mis', 'ptv'])
+    assert(mutation_type in ['mis', 'ptv', 'syn'])
     if(mutation_type == 'mis'):
         mutation_consequences = set(['missense_variant'])
 
         def rate_function(gene): return 10**gene.mis
+    elif(mutation_type == 'syn'):
+        mutation_consequences = set(['synonymous_variant'])
+
+        def rate_function(gene): return 10**gene.syn
     else:
         mutation_consequences = set(
             ['stop_gained', 'splice_acceptor_variant', 'splice_donor_variant']
@@ -82,6 +87,44 @@ def create_gene_df(allele_df, mutation_rates, mutation_type):
             cond4 = allele_row['FILTER'] == 'PASS'
             if(cond1 and cond2 and cond3 and cond4):
                 gene_df.loc[gene, 'allele_count'] += allele_row['AC']
+    return gene_df
+
+
+def create_gene_df_stratified(allele_df, mutation_rates, mutation_type, strat_names, variant_scores):
+    gene_df = pd.DataFrame(index=mutation_rates.index)
+    assert(mutation_type in ['mis', 'ptv', 'syn'])
+    if(mutation_type == 'mis'):
+        mutation_consequences = set(['missense_variant'])
+
+        def rate_function(gene): return 10**gene.mis
+    elif(mutation_type == 'syn'):
+        mutation_consequences = set(['synonymous_variant'])
+
+        def rate_function(gene): return 10**gene.syn
+    else:
+        mutation_consequences = set(
+            ['stop_gained', 'splice_acceptor_variant', 'splice_donor_variant']
+        )
+
+        def rate_function(gene): return combine_log_rates(gene.non, gene.splice_site)
+    gene_df['total_mutations'] = N_genomes * mutation_rates.apply(rate_function, axis=1) / len(strat_names)
+    for name in strat_names:
+        gene_df['ac_' + name] = 0
+    for index, allele_row in allele_df.iterrows():
+        lookup_key = variant_quartiles.get_lookup_key(
+            (allele_row['POS']), str(allele_row['REF']), str(allele_row['ALT'])
+        )
+        gene_consequences = allele_row['consequence']
+        for gene in gene_consequences.keys():
+            cond1 = gene != ''
+            cond2 = len(mutation_consequences.intersection(gene_consequences[gene])) > 0
+            cond3 = gene in gene_df.index
+            cond4 = allele_row['FILTER'] == 'PASS'
+            cond5 = allele_row['AC'] < 0.001 * N_genomes
+            cond6 = lookup_key in variant_scores.index and variant_scores.loc[lookup_key, 'quartile'] >= 0
+            if(cond1 and cond2 and cond3 and cond4 and cond5 and cond6):
+                quartile_name = 'ac_' + variant_scores.loc[lookup_key, 'quartile']
+                gene_df.loc[gene, quartile_name] += allele_row['AC']
     return gene_df
 
 
@@ -111,6 +154,18 @@ def load_allele_df(vcf_dataset_path, gene_list):
     return allele_df
 
 
+def load_strat():
+    mut_rates_path = 'input_data/mutation_probabilities.xls'
+    mutation_rates = pd.read_excel(mut_rates_path, index_col=1, sheet_name=1)
+    allele_df = pd.read_pickle('saved_data/allele_df.pkl')
+    strat_names = ['0', '1', '2', '3']
+    variant_scores = pd.read_pickle('saved_data/variant_scores_short.pkl')
+    gene_df_strat = create_gene_df_stratified(allele_df, mutation_rates, 'mis', strat_names, variant_scores)
+    gene_df_strat.to_pickle('saved_data/gene_df_strat.pkl')
+    pdb.set_trace()
+
+
+
 def load_gene_distribution(save_data, data_file_names):
     vcf_dataset_path = 'input_data/ExAC.vcf.gz'
     mut_rates_path = 'input_data/mutation_probabilities.xls'
@@ -123,6 +178,16 @@ def load_gene_distribution(save_data, data_file_names):
         gene_df_missense.to_pickle(data_file_names['missense'])
         gene_df_ptv.to_pickle(data_file_names['ptv'])
     return allele_df, gene_df_missense, gene_df_ptv
+
+
+def load_syn():
+    mut_rates_path = 'input_data/mutation_probabilities.xls'
+    mutation_rates = pd.read_excel(mut_rates_path, index_col=1, sheet_name=1)
+    allele_df = pd.read_pickle('saved_data/allele_df.pkl')
+    gene_df_syn = create_gene_df(allele_df, mutation_rates, 'syn')
+    gene_df_syn.to_pickle('saved_data/gene_df_syn.pkl')
+    gene_df_syn = filter_gene_df(gene_df_syn, 'saved_data/gene_df_filtered_syn.pkl')
+    pdb.set_trace()
 
 
 def load_gene_distribution_saved(data_file_names):
@@ -161,7 +226,7 @@ def get_coverage_filter(gene_index):
 
 
 def filter_gene_df(gene_df, file_name):
-    gene_filter = gene_df['allele_count'] <= 0.001 * N_genomes
+    gene_filter = gene_df['allele_count'] <= 0.01 * N_genomes
     gene_df = gene_df[gene_filter]
     gene_filter = get_coverage_filter(gene_df.index)
     gene_df = gene_df[gene_filter]
