@@ -101,15 +101,15 @@ class FitnessEstimator(object):
     def calculate_posterior_mean_strat(self, gene_df):
         strat_names = ['0', '1', '2', '3']
         for name in strat_names:
-            gene_df['s_mean_' + name] = -1
+            gene_df['s_' + name] = -1
         for index, gene in gene_df.iterrows():
             for name in strat_names:
                 try:
-                    gene_df.loc[index, 's_mean_' + name] = FitnessEstimator.compute_mean(
+                    gene_df.loc[index, 's_' + name] = FitnessEstimator.compute_mean(
                         self._alpha, self._beta, gene['ac_' + name], gene['total_mutations']
                     )
                 except ValueError:
-                    gene_df.loc[index, 's_mean_' + name] = 0
+                    gene_df.loc[index, 's_' + name] = 0
 
     def compare_priors(self, gene_df):
         prior_params = [

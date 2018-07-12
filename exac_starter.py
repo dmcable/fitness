@@ -40,6 +40,7 @@ def evaluate_prior_method(gene_df):
 if __name__ == '__main__':
     #gene_df, gene_df_missense = load_data()
     gene_df = pd.read_pickle('saved_data/gene_df_strat.pkl')
+    pdb.set_trace()
     #simulated_df = pd.read_pickle('saved_data/simulated_data.pkl')
     #evaluate_prior_method(gene_df_ptv)
     #gene_df_ptv = gene_df_ptv.sample(1000)
