@@ -37,24 +37,22 @@ def inv_gauss_cdf(alpha, beta, s_het):
 
 class FitnessEstimator(object):
     # gene_df: a dataframe with columns of allele_count and mutation_rate
-    def __init__(self, gene_df, run_stuff=False):
+    def __init__(self, gene_df):
         self._N_steps = 20000
         self._delta = 0.0001
-        #self._alpha, self._beta = self.estimate_prior(gene_df, method='iterative', grid_size=40)
+        # self._alpha, self._beta = self.estimate_prior(gene_df, method='iterative', grid_size=40)
         self._alpha, self._beta = .027, .0027
 
     def estimate_prior(self, gene_df, method='empirical', grid_size=10):
         assert(method in ['empirical', 'iterative'])
-        N_alpha = grid_size # grid_size
-        N_beta = grid_size # grid_size
+        N_alpha = grid_size
+        N_beta = grid_size
         alpha_vals = np.exp(np.linspace(np.log(.001), np.log(2), N_alpha))
         beta_vals = np.exp(np.linspace(np.log(.0001), np.log(2), N_beta))
         results = np.zeros((N_alpha, N_beta))
         for alpha_index in range(N_alpha):
-            #print(alpha_index)
             alpha = alpha_vals[alpha_index]
             for beta_index in range(N_beta):
-                #print(beta_index)
                 beta = beta_vals[beta_index]
                 if(method == 'empirical'):
                     results[alpha_index, beta_index] = (
@@ -63,10 +61,8 @@ class FitnessEstimator(object):
                 elif(method == 'iterative'):
                     self._alpha = alpha
                     self._beta = beta
-                    results[alpha_index, beta_index] = (
-                        self.prior_posterior_distance(gene_df)
-                    )
-        #np.save('results/prior_results_simulated_' + str(N_alpha) + '_' + method + '.npy', results)
+                    results[alpha_index, beta_index] = self.prior_posterior_distance(gene_df)
+        np.save('results/prior_results_simulated_' + str(N_alpha) + '_' + method + '.npy', results)
         alpha_array, beta_array = np.meshgrid(alpha_vals, beta_vals, indexing='ij')
         plot_figure = False
         if(plot_figure):
@@ -76,7 +72,6 @@ class FitnessEstimator(object):
         else:
             best_index = np.ndarray.argmin(results)
         (ml_alpha_index, ml_beta_index) = np.unravel_index(best_index, results.shape)
-        pdb.set_trace()
         return alpha_vals[ml_alpha_index], beta_vals[ml_beta_index]
 
     def compute_log_likelihood(self, gene_df, alpha, beta):
@@ -129,7 +124,6 @@ class FitnessEstimator(object):
                 percent_errors[label] = (
                     abs((s_est[label] - s_est['iterative best'])) / s_est['iterative best']
                 )
-        pdb.set_trace()
 
     def calculate_naive_mean(self, gene_df):
         gene_df['s_naive'] = gene_df['total_mutations']/gene_df['allele_count']
@@ -173,12 +167,6 @@ class FitnessEstimator(object):
                 alpha, beta, allele_count, total_mutations, s, p_n
             )
             total_prob += delta * posterior_pdf[i]
-        # print(str(total_prob) + ' ' + str(allele_count) + ' ' + str(total_mutations))
-        '''
-        plt.plot(delta * np.array(range(N)), np.log(posterior_pdf), 'o')
-        plt.show()
-        pdb.set_trace()
-        '''
         return posterior_pdf
 
     @staticmethod
@@ -192,11 +180,10 @@ class FitnessEstimator(object):
             total += posterior_pdf[i] * delta * s
         return total
 
-    #use: best_alpha, best_beta, results, alpha_vals, beta_vals = load_results(grid_size, method)
     @staticmethod
     def load_results(grid_size, method):
-        N_alpha = grid_size # grid_size
-        N_beta = grid_size # grid_size
+        N_alpha = grid_size  # grid_size
+        N_beta = grid_size  # grid_size
         alpha_vals = np.exp(np.linspace(np.log(.001), np.log(2), N_alpha))
         beta_vals = np.exp(np.linspace(np.log(.0001), np.log(2), N_beta))
         file_name = 'results/prior_results_simulated_' + str(N_alpha) + '_' + method + '.npy'
@@ -211,18 +198,11 @@ class FitnessEstimator(object):
 
     def get_aggregate_posterior_cdf(self, gene_df):
         posterior_pdf = np.zeros(self._N_steps)
-        for index, gene in gene_df.iterrows():# **************BIG CHANGE***********ALERT**********BIG CHANGE******* .sample(n=num_genes).iterrows():
-            to_add = FitnessEstimator.compute_posterior(
+        for index, gene in gene_df.iterrows():
+            posterior_pdf += FitnessEstimator.compute_posterior(
                 self._alpha, self._beta, gene['allele_count'], gene['total_mutations'],
                 N_steps=self._N_steps, delta=self._delta
             )
-            if(False and (index == 'TCEA3' or (np.cumsum(to_add) * self._delta)[-5] < 0.9)):
-                pdb.set_trace()
-                posterior_pdf += FitnessEstimator.compute_posterior(
-                    self._alpha, self._beta, gene['allele_count'], gene['total_mutations'],
-                    N_steps=self._N_steps, delta=self._delta
-                )
-            posterior_pdf += to_add
         posterior_pdf = posterior_pdf / len(gene_df)
         posterior_cdf = np.cumsum(posterior_pdf) * self._delta
         return posterior_cdf, posterior_pdf

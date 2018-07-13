@@ -3,8 +3,8 @@ import pdb
 import pandas as pd
 from itertools import compress
 import numpy as np
-from genePredExt import parse_genePredExt
-import coverage
+from external_tools.genePredExt import parse_genePredExt
+import external_tools.coverage as coverage
 import VariantQuartiles
 
 N_genomes = 60706
@@ -93,10 +93,12 @@ def create_gene_df(allele_df, mutation_rates, mutation_type):
 def create_gene_df_stratified(allele_df, mutation_rates, strat_names, variant_quartiles):
     gene_df = pd.DataFrame(index=mutation_rates.index)
     mutation_consequences = set(['missense_variant'])
-    valid_keys = set(variant_quartiles.keys())
+    valid_keys = set(variant_quartiles.index)
+
     def rate_function(gene): return 10**gene.mis
 
-    gene_df['total_mutations'] = N_genomes * mutation_rates.apply(rate_function, axis=1) / len(strat_names)
+    gene_df['total_mutations'] = N_genomes * mutation_rates.apply(rate_function, axis=1)
+    gene_df['total_mutations'] /= len(strat_names)  # cut mutation rate for each strata
     for name in strat_names:
         gene_df['ac_' + name] = 0
         gene_df['vc_' + name] = 0
@@ -107,17 +109,16 @@ def create_gene_df_stratified(allele_df, mutation_rates, strat_names, variant_qu
         )
         gene_consequences = allele_row['consequence']
         for gene in gene_consequences.keys():
-            cond1 = gene != ''
+            cond1 = gene != '' and gene in gene_df.index
             cond2 = len(mutation_consequences.intersection(gene_consequences[gene])) > 0
-            cond3 = gene in gene_df.index
-            cond4 = allele_row['FILTER'] == 'PASS'
-            cond5 = allele_row['AC'] < 0.001 * N_genomes
-            cond6 = lookup_key in valid_keys
-            if(cond1 and cond2 and cond3 and cond4 and cond5 and cond6):
-                gene_df.loc[gene, 'ac_' + variant_quartiles[lookup_key]] += allele_row['AC']
-                gene_df.loc[gene, 'vc_' + variant_quartiles[lookup_key]] += 1
+            cond3 = allele_row['FILTER'] == 'PASS' and allele_row['AC'] < 0.001 * N_genomes
+            cond4 = lookup_key in valid_keys
+            if(cond1 and cond2 and cond3 and cond4):
+                quartile = variant_quartiles.loc[lookup_key, 'quartile']
+                gene_df.loc[gene, 'ac_' + quartile] += allele_row['AC']
+                gene_df.loc[gene, 'vc_' + quartile] += 1
                 if(allele_row['AC'] >= 1):
-                    gene_df.loc[gene, 'vu_' + variant_quartiles[lookup_key]] += 1
+                    gene_df.loc[gene, 'vu_' + quartile] += 1
     return gene_df
 
 
@@ -168,7 +169,7 @@ def load_syn():
     gene_df_syn = create_gene_df(allele_df, mutation_rates, 'syn')
     gene_df_syn.to_pickle('saved_data/gene_df_syn.pkl')
     gene_df_syn = filter_gene_df(gene_df_syn, 'saved_data/gene_df_filtered_syn.pkl')
-    pdb.set_trace()
+    return gene_df_syn
 
 
 def load_gene_distribution_saved(data_file_names):
@@ -207,7 +208,7 @@ def get_coverage_filter(gene_index):
 
 
 def filter_gene_df(gene_df, file_name):
-    gene_filter = gene_df['allele_count'] <= 0.01 * N_genomes
+    gene_filter = gene_df['allele_count'] <= 0.001 * N_genomes
     gene_df = gene_df[gene_filter]
     gene_filter = get_coverage_filter(gene_df.index)
     gene_df = gene_df[gene_filter]
