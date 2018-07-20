@@ -64,6 +64,7 @@ def load_variant_quartiles():
         variant_quartiles = pd.read_pickle(quartiles_file)
     else:
         variant_quartiles = get_variant_quartiles()
+        variant_quartiles.sort_index(inplace=True)
         variant_quartiles.to_pickle(quartiles_file)
     return variant_quartiles
 
