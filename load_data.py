@@ -93,7 +93,7 @@ def create_gene_df(allele_df, mutation_rates, mutation_type):
             cond1 = gene != ''
             cond2 = len(mutation_consequences.intersection(gene_consequences[gene])) > 0
             cond3 = gene in gene_df.index
-            cond4 = allele_row['FILTER'] == 'PASS' and allele_row['AC'] < 0.001 * N_genomes
+            cond4 = allele_row['FILTER'] == 'PASS' # and allele_row['AC'] < 0.001 * N_genomes
             if(cond1 and cond2 and cond3 and cond4):
                 gene_df.loc[gene, 'allele_count'] += allele_row['AC']
     return gene_df
@@ -123,7 +123,7 @@ def create_gene_df_stratified(allele_df, mutation_rates, strat_names, variant_qu
         for gene in gene_consequences.keys():
             cond1 = gene != '' and gene in gene_df.index
             cond2 = len(mutation_consequences.intersection(gene_consequences[gene])) > 0
-            cond3 = allele_row['FILTER'] == 'PASS' and allele_row['AC'] < 0.001 * N_genomes
+            cond3 = allele_row['FILTER'] == 'PASS' # and allele_row['AC'] < 0.001 * N_genomes
             cond4 = lookup_key in valid_keys
             if(cond1 and cond2 and cond3 and cond4):
                 quartile = variant_quartiles.loc[lookup_key, 'quartile']
@@ -146,7 +146,7 @@ def create_variant_df_stratified(allele_df, gene_list, strat_names, variant_quar
         for gene in gene_consequences.keys():
             cond1 = gene != '' and gene in gene_list
             cond2 = len(mutation_consequences.intersection(gene_consequences[gene])) > 0
-            cond3 = allele_row['FILTER'] == 'PASS' and allele_row['AC'] < 0.001 * N_genomes
+            cond3 = allele_row['FILTER'] == 'PASS' # and allele_row['AC'] < 0.001 * N_genomes
             cond4 = lookup_key in valid_keys
             if(cond1 and cond2 and cond3 and cond4):
                 quartile = variant_quartiles.loc[lookup_key, 'quartile']
@@ -230,17 +230,18 @@ def get_coverage_filter(gene_index):
             if(gene in gene_filter):
                 for i in range(len(exons)):
                         for cov_dict in cov_dicts:
-                            successes_to_add, failures_to_add = coverage.good_coverage(
-                                cov_dict[chrom], chrom, exons[i][0], exons[i][1]
-                            )
-                            successes += successes_to_add
-                            failures += failures_to_add
+                            if chrom in cov_dict:
+                                successes_to_add, failures_to_add = coverage.good_coverage(
+                                    cov_dict[chrom], chrom, exons[i][0], exons[i][1]
+                                )
+                                successes += successes_to_add
+                                failures += failures_to_add
                 gene_filter[gene] = successes >= failures
     return gene_filter
 
 
 def filter_gene_df(gene_df, file_name):
-    gene_filter = gene_df['allele_count'] <= 0.001 * N_genomes
+    # gene_filter = gene_df['allele_count'] <= 0.001 * N_genomes
     gene_df = gene_df[gene_filter]
     gene_filter = get_coverage_filter(gene_df.index)
     gene_df = gene_df[gene_filter]
@@ -276,17 +277,40 @@ def load_global_allele_df():
 
 def combine_variants(variant_df):
     allele_df = pd.DataFrame(columns=list(variant_df.columns.values))
+    n = 0
+    keys = set({})
+    row_indices = []
+    ac_map = {}
+    key_to_index = {}
+    rename_map = {}
     for index, allele_row in variant_df.iterrows():
+        n += 1
+        if(n % 1000 == 0):
+            print(n)
         lookup_key = VariantQuartiles.get_lookup_key(
             str(allele_row['POS']), str(allele_row['REF']), str(allele_row['ALT'])
         )
-        if(lookup_key not in allele_df.index):
-            allele_row.name = lookup_key
-            allele_df.append(allele_df)
+        if(lookup_key not in keys):
+            keys.add(lookup_key)
+            row_indices.append(index)
+            ac_map[lookup_key] = allele_row['AC']
+            key_to_index[lookup_key] = index
+            rename_map[index] = lookup_key
         else:
-            allele_df[lookup_key] += allele_row['AC']
+            ac_map[lookup_key] += allele_row['AC']
     # filter out variants appearing too often
-    allele_df = allele_df[allele_df['AC'] < 0.001 * N_genomes]
+    allele_df = variant_df.loc[row_indices, :]
+    #
+    n = 0
+    for index, allele_row in allele_df.iterrows():
+        n += 1
+        if(n % 1000 == 0):
+            print(n)
+        allele_row['AC'] = ac_map[rename_map[index]]
+    # for key in keys:
+    #     allele_df.loc[key_to_index[key], 'AC'] = ac_map[key]
+    # allele_df = allele_df[allele_df['AC'] < 0.001 * N_genomes]
+    allele_df = allele_df.rename(index=rename_map)
     return allele_df
 
 
@@ -317,7 +341,20 @@ def load_data():
     return gene_df_ptv, gene_df_missense
 
 
-if __name__ == '__main__':
-    allele_df = pd.read_pickle('saved_data/allele_df.pkl')
-    allele_df = combine_variants(allele_df)
-    allele_df.to_pickle('save_data/allele_df_combined.pkl')
+def process_df():
+    print('starting')
+    need_to_load = os.stat('saved_data/allele_df_full.pkl').st_size == 0
+    if(need_to_load):
+        allele_df = pd.read_pickle('saved_data/allele_df_unfiltered.pkl')
+        allele_df = allele_df[allele_df['FILTER'] == 'PASS']
+        rename_map = {}
+        for index, allele_row in allele_df.iterrows():
+            lookup_key = VariantQuartiles.get_lookup_key(
+                str(allele_row['POS']), str(allele_row['REF']), str(allele_row['ALT'])
+            )
+            rename_map[index] = lookup_key
+        allele_df = allele_df.rename(index=rename_map)
+        allele_df.to_pickle('saved_data/allele_df_full.pkl')
+    else:
+        allele_df = pd.read_pickle('saved_data/allele_df_full.pkl')
+    return allele_df
