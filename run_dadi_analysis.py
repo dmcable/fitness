@@ -3,22 +3,63 @@ import pandas as pd
 from VariantQuartiles import load_variant_quartiles
 import numpy as np
 import pdb
-import time
+import pickle
 
-def gen_sfs(strat_name, variant_count_list):
-    save_file = 'saved_data/sfs_full_strat_' + strat_name + '.npy'
-    max_freq = 10000
-    freq_vect = np.zeros(max_freq + 1)
-    not_counted = 0
+
+def aggregate_ac_counts(allele_df, variant_quartiles):
+    aggregated = True
+    if(aggregated):
+        ac_dict = pickle.load(open('ac_dict.pkl', "rb"))
+        return ac_dict
+    ac_dict = {}
+    mutation_consequences = set(['missense_variant'])
     n = 0
-    for allele_count in variant_count_list:
+    for key, quartile_row in variant_quartiles.iterrows():
         n += 1
         if(n % 50000 == 0):
             print(n)
+        quartile = int(quartile_row['quartile'])
+        if(key != '' and key in allele_df.index):
+            allele_row = allele_df.loc[key]
+            consequences = allele_row['consequence']
+            if(allele_row['FILTER'] == 'PASS'):
+                for gene, cons in consequences.iteritems():
+                    if(mutation_consequences.intersection(cons) > 0):
+                        if(gene not in ac_dict.keys()):
+                            ac_dict[gene] = [[] for i in range(4)]
+                        ac_dict[gene][quartile].append(allele_row['AC'])
+    pickle.dump(ac_dict, open('ac_dict.pkl', 'wb'))
+    return ac_dict
+
+
+def count_variants(ac_dict):
+    variant_counts = {}
+    for gene in ac_dict.keys():
+        variant_counts[gene] = sum([len(ac_dict[gene][i]) for i in range(4)])
+    return variant_counts
+
+
+def gen_gene_specific_sfs(allele_df, variant_quartiles):
+    ac_dict = aggregate_ac_counts(allele_df, variant_quartiles)
+    variant_counts = count_variants(ac_dict)
+    pickle.dump(variant_counts, open('variant_counts.pkl', 'wb'))
+    #threshold = 500  # determined this somehow by looking at variant_counts
+    for gene in variant_counts.keys():
+        if(True):  # (variant_counts[gene] > threshold):
+            for strat in range(4):
+                gen_sfs(str(strat), ac_dict[gene][strat], gene)
+    pdb.set_trace()
+
+
+def gen_sfs(strat_name, variant_count_list, prefix='fullest'):
+    save_file = 'gene_sfs/sfs_' + prefix + '_strat_' + strat_name + '.npy'
+    max_freq = 500000
+    freq_vect = np.zeros(max_freq + 1)
+    for allele_count in variant_count_list:
         if(allele_count <= max_freq):
             freq_vect[allele_count] += 1
         else:
-            not_counted += 1
+            freq_vect[-1] += 1
     np.save(save_file, freq_vect)
 
 
@@ -64,18 +105,28 @@ def create_allele_df_synon(allele_df):
     gen_sfs('syn', quartile_df['AC'].tolist())
 
 
-def main_fun(allele_df=None):
+def main_fun(allele_df=None, variant_quartiles=None):
     loaded_sfs = False
     if(not loaded_sfs):
         load_global_allele_df()
         if(allele_df is None):
-            allele_df = pd.read_pickle('saved_data/allele_df.pkl')
+            allele_df = pd.read_pickle('saved_data/allele_df_comb.pkl')
         strat_names = ['0', '1', '2', '3']
-        variant_quartiles = load_variant_quartiles()
+        if(variant_quartiles is None):
+            variant_quartiles = load_variant_quartiles()
         create_allele_df_stratified(allele_df, strat_names, variant_quartiles)
         create_allele_df_synon(allele_df)
-        time.sleep(10000000)
 
 
 if __name__ == '__main__':
     main_fun()
+
+
+def combine_sfs():
+    for strat_name in ['0', '1', '2', '3', 'syn']:
+        main_sfs = np.load('saved_data/sfs_fuller_strat_' + strat_name + '.npy')
+        add_sfs = np.load('saved_data/sfs_full_strat_' + strat_name + '.npy')
+        for i in range(len(add_sfs)):
+            main_sfs[i] = add_sfs[i]
+        save_file = 'saved_data/sfs_fullest_strat_' + strat_name + '.npy'
+        np.save(save_file, main_sfs)

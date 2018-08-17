@@ -277,36 +277,34 @@ def load_global_allele_df():
 
 def combine_variants(variant_df):
     allele_df = pd.DataFrame(columns=list(variant_df.columns.values))
-    n = 0
     keys = set({})
     row_indices = []
     ac_map = {}
     key_to_index = {}
     rename_map = {}
-    for index, allele_row in variant_df.iterrows():
-        n += 1
-        if(n % 1000 == 0):
-            print(n)
+    for nn, (index, allele_row) in enumerate(variant_df.iterrows(), 1):
+        nn = nn - 1
+        if(nn % 10000 == 0):
+            print(nn)
         lookup_key = VariantQuartiles.get_lookup_key(
             str(allele_row['POS']), str(allele_row['REF']), str(allele_row['ALT'])
         )
         if(lookup_key not in keys):
             keys.add(lookup_key)
-            row_indices.append(index)
+            row_indices.append(nn)
             ac_map[lookup_key] = allele_row['AC']
-            key_to_index[lookup_key] = index
+            key_to_index[lookup_key] = nn
             rename_map[index] = lookup_key
         else:
             ac_map[lookup_key] += allele_row['AC']
     # filter out variants appearing too often
-    allele_df = variant_df.loc[row_indices, :]
+    allele_df = variant_df.iloc[row_indices, :]
     #
-    n = 0
+    ac_vals = []
     for index, allele_row in allele_df.iterrows():
-        n += 1
-        if(n % 1000 == 0):
-            print(n)
-        allele_row['AC'] = ac_map[rename_map[index]]
+        ac_vals.append(ac_map[rename_map[index]])
+        #allele_df.loc[index, 'AC'] = ac_map[rename_map[index]]
+    allele_df.loc[:, 'AC'] = ac_vals
     # for key in keys:
     #     allele_df.loc[key_to_index[key], 'AC'] = ac_map[key]
     # allele_df = allele_df[allele_df['AC'] < 0.001 * N_genomes]
@@ -358,3 +356,12 @@ def process_df():
     else:
         allele_df = pd.read_pickle('saved_data/allele_df_full.pkl')
     return allele_df
+
+
+def sorted_script(vect):
+    prev = set([])
+    for i in range(len(vect)):
+        next = vect[i]
+        if(next in prev):
+            print(next)
+        prev.add(next)
