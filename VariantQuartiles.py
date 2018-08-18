@@ -58,7 +58,7 @@ def get_gene_quartile_fun(variant_scores):
 
 # returns variant_quartiles, a mapping from lookup_key to primate_score quartile per gene
 def load_variant_quartiles():
-    quartiles_file = 'saved_data/variant_quartiles_df.pkl'
+    quartiles_file = 'saved_data/variant_quartiles.pkl'
     loaded_variant_quartiles = True
     if(loaded_variant_quartiles):
         variant_quartiles = pd.read_pickle(quartiles_file)

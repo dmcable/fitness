@@ -99,12 +99,14 @@ def fit_gene_sel(next_N, gene_list, theta_ns, integrate_fun):
 
 if __name__ == '__main__':
     created_sfs = False
-    next_N = 10000
+    next_N = 10000  # this is how much downsampling is done.
     if(not created_sfs):
         create_sfs_files(next_N, 'sfs/sfs_fullest_strat_', 5)
     theta_ns, spectra = load_specra_and_demog(next_N)
     sel_params = fit_sel_params(next_N, 'sfs/sfs_fullest_strat_', theta_ns, spectra.integrate, True, True)
     print(sel_params)
     pdb.set_trace()
-    gene_list = ['TTN'] # ['BRPF3', 'MOCOS']
-    fit_gene_sel(next_N, gene_list, theta_ns, spectra.integrate)
+
+    # *** Gene specific analysis: ***
+    #gene_list = ['TTN']
+    #fit_gene_sel(next_N, gene_list, theta_ns, spectra.integrate)

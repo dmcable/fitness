@@ -181,9 +181,8 @@ def load_allele_df(vcf_dataset_path, gene_list):
 
 
 def load_gene_distribution(save_data, data_file_names):
-    vcf_dataset_path = 'input_data/ExAC.vcf.gz'
     mutation_rates = pd.read_excel(mut_rates_path, index_col=1, sheet_name=1)
-    allele_df = load_allele_df(vcf_dataset_path, mutation_rates.index)
+    allele_df = load_global_allele_df(need_return=True)
     gene_df_missense = create_gene_df(allele_df, mutation_rates, 'mis')
     gene_df_ptv = create_gene_df(allele_df, mutation_rates, 'ptv')
     if(save_data):
@@ -249,10 +248,14 @@ def filter_gene_df(gene_df, file_name):
     return gene_df
 
 
-def load_global_allele_df():
-    loaded_allele_df = True
+def load_global_allele_df(need_return=False):
+    loaded_allele_df = False
     if(loaded_allele_df):
-        return
+        if(need_return):
+            allele_df = pd.read_pickle('saved_data/allele_df.pkl')
+            return allele_df
+        else:
+            return None
     mutation_rates = pd.read_excel(mut_rates_path, index_col=1, sheet_name=1)
     gene_list = mutation_rates.index
     vcf_dataset_paths = [
@@ -273,6 +276,7 @@ def load_global_allele_df():
                 global_allele_df = global_allele_df.append(allele_df, ignore_index=True)
     global_allele_df = combine_variants(global_allele_df)
     global_allele_df.to_pickle('saved_data/allele_df.pkl')
+    return global_allele_df
 
 
 def combine_variants(variant_df):
@@ -356,12 +360,3 @@ def process_df():
     else:
         allele_df = pd.read_pickle('saved_data/allele_df_full.pkl')
     return allele_df
-
-
-def sorted_script(vect):
-    prev = set([])
-    for i in range(len(vect)):
-        next = vect[i]
-        if(next in prev):
-            print(next)
-        prev.add(next)
